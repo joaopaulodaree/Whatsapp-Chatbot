@@ -188,25 +188,35 @@ function loadCsv(filePath, separator = ';') {
     fs.readFile(filePath, 'utf8', (err, content) => {
       if (err) return reject(err);
 
-      const lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
-      const merged = [];
-      let current = '';
+      const isCleaned = filePath.includes('cleaned');
 
-      for (const line of lines) {
-        if (line.startsWith('02;')) {
-          if (current) merged.push(current);
-          current = line;
-        } else {
-          // Linha de continuação de registro
-          current += line.trimStart();
+      let lines;
+      if (isCleaned) {
+        // Para CSV limpo, cada linha é um registro
+        lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
+      } else {
+        // Lógica original para CSV não limpo
+        lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
+        const merged = [];
+        let current = '';
+
+        for (const line of lines) {
+          if (line.startsWith('02;')) {
+            if (current) merged.push(current);
+            current = line;
+          } else {
+            // Linha de continuação de registro
+            current += line.trimStart();
+          }
         }
-      }
 
-      if (current) merged.push(current);
+        if (current) merged.push(current);
+        lines = merged;
+      }
 
       const rows = [];
       const { Readable } = require('stream');
-      const stream = Readable.from(merged.join('\n'));
+      const stream = Readable.from(lines.join('\n'));
 
       let nomeCounter = 0;
 
@@ -239,7 +249,7 @@ function loadCsv(filePath, separator = ';') {
 }
 
 function getDefaultCsvPath() {
-  return path.resolve(__dirname, '../../..', 'Souarte.CSV');
+  return path.resolve(__dirname, '../../..', 'Souarte_cleaned.CSV');
 }
 
 module.exports = {
