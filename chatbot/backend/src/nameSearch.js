@@ -115,6 +115,24 @@ function getFieldValue(row, nameField) {
   return '';
 }
 
+function extractDuplicata(row) {
+  if (!row || typeof row !== 'object') {
+    return {
+      nome: '',
+      duplic: '',
+      vencto: '',
+      total: '',
+    };
+  }
+
+  return {
+    nome: String(getFieldValue(row, 'Nome') || '').trim(),
+    duplic: String(getFieldValue(row, 'Duplic') || getFieldValue(row, 'Duplicata') || '').trim(),
+    vencto: String(getFieldValue(row, 'Vencto') || getFieldValue(row, 'Vencimento') || '').trim(),
+    total: String(getFieldValue(row, 'Total') || '').trim(),
+  };
+}
+
 function searchClientsByName(query, rows, nameField = "Nome", limit = 5, requireAllTokens = false) {
   const normalizedQuery = normalizeText(query);
   const queryTokens = normalizedQuery.split(" ").filter(Boolean);
@@ -124,10 +142,12 @@ function searchClientsByName(query, rows, nameField = "Nome", limit = 5, require
   const candidates = rows.map((row) => {
     const rawName = getFieldValue(row, nameField);
     const parsed = extractClientInfo(rawName);
+    const duplicata = extractDuplicata(row);
 
     return {
       row,
       ...parsed,
+      duplicata,
       score: scoreCandidate(query, parsed),
       queryTokens,
     };
