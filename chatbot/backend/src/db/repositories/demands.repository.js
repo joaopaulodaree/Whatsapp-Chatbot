@@ -84,8 +84,27 @@ function listDemands({ search = '', type, status, sortBy = 'created_at', order =
   `).all(...params);
 }
 
+function deleteDemand(demandId) {
+  const existing = db
+    .prepare(`
+      SELECT * FROM demands
+      WHERE id = ?
+    `)
+    .get(demandId);
+
+  if (!existing) return null;
+
+  db.prepare(`
+    DELETE FROM demands
+    WHERE id = ?
+  `).run(demandId);
+
+  return existing;
+}
+
 module.exports = {
   createDemand,
   updateDemandStatus,
   listDemands,
+  deleteDemand,
 };

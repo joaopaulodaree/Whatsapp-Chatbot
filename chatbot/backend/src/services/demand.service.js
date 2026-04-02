@@ -1,5 +1,5 @@
 const { upsertClient } = require('../db/repositories/clients.repository');
-const { createDemand } = require('../db/repositories/demands.repository');
+const { createDemand, listDemands } = require('../db/repositories/demands.repository');
 
 async function getContactData(msg) {
   const contact = await msg.getContact();
@@ -7,7 +7,7 @@ async function getContactData(msg) {
   return {
     whatsappId: msg.from || null,
     phone: contact?.number || null,
-    pushName: contact?.pushName || null,
+    pushName: contact?.name || contact?.pushName || null,
   };
 }
 

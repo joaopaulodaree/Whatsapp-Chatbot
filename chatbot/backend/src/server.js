@@ -7,7 +7,7 @@ const {
     toggleBotEnabled,
 } = require('./store');
 
-const { listDemands, updateDemandStatus } = require('./db/repositories/demands.repository');
+const { listDemands, updateDemandStatus, deleteDemand } = require('./db/repositories/demands.repository');
 
 const { searchClientsByName, loadCsv, getDefaultCsvPath, aggregateByName, formatCurrencyBR } = require('./nameSearch');
 const { startBot } = require('./bot');
@@ -31,8 +31,6 @@ const CSV_FILE_PATH = process.env.CSV_PATH || getDefaultCsvPath();
 
 app.use(cors());
 app.use(express.json());
-
-
 
 loadCsv(CSV_FILE_PATH)
     .then((rows) => {
@@ -286,6 +284,25 @@ app.patch('/api/demands/:id/status', (req, res) => {
   }
 
   res.json(updated);
+});
+
+app.delete('/api/demands/:id', (req, res) => {
+  const demandId = Number(req.params.id);
+
+  if (!Number.isInteger(demandId) || demandId <= 0) {
+    return res.status(400).json({ error: 'ID inválido' });
+  }
+
+  const deleted = deleteDemand(demandId);
+
+  if (!deleted) {
+    return res.status(404).json({ error: 'Demanda não encontrada' });
+  }
+
+  res.json({
+    success: true,
+    deleted,
+  });
 });
 
 app.listen(PORT, async () => {
