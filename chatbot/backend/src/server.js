@@ -7,14 +7,15 @@ const {
     getClients,
     upsertClient,
     getBotStatus,
-    toggleBotStatus,
+    toggleBotEnabled,
 } = require('./store');
 
-const { searchClientsByName, loadCsv, getDefaultCsvPath, aggregateByName } = require('./nameSearch');
+const { searchClientsByName, loadCsv, getDefaultCsvPath, aggregateByName, formatCurrencyBR } = require('./nameSearch');
 const { env } = require('process');
+const { startBot } = require('./bot');
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const GROQ_MODEL_PREFERENCE = (process.env.GROQ_MODEL || 'openai/gpt-oss-20b').trim();
+const GROQ_MODEL_PREFERENCE = (process.env.GROQ_MODEL || 'openai/gpt-oss-120b').trim();
 
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 
@@ -175,42 +176,70 @@ app.post('/api/ai-response', async (req, res) => {
     - Os usuários podem escrever informalmente, com erros de digitação ou gírias.
     `.trim();
 
+    const totalClient = formatCurrencyBR(selected.total);
     const userPrompt = `
-    Cliente: ${selected.name}
+    Cliente: ${selected.name} | Total da soma de todas as duplicatas: ${totalClient}
 
     Duplicatas:
     ${duplicatas.map((d) => `- Duplicata ${d.duplic} | Vencimento ${d.vencto} | Total ${d.total}`).join('\n')}
 
     Pedido do usuário:
     ${userRequest || 'Faça a melhor resposta para o cliente.'}
+
+    Importante:
+    - O total geral já foi calculado no sistema.
+    - Não recalcule os valores se a pergunta for sobre total.
+    - Use o total geral informado acima.
     `.trim();
 
     try {
         const response = await groq.chat.completions.create({
-            model: process.env.GROQ_MODEL_PREFERENCE || 'openai/gpt-oss-120b',
+            model: GROQ_MODEL_PREFERENCE || 'openai/gpt-oss-120b',
             messages: [
-                {
-                    role: 'system',
-                    content: systemPrompt,
-                },
-                {
-                    role: 'user',
-                    content: userPrompt,
-                },
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt },
             ],
-            max_tokens: 700,
+            max_tokens: 1000,
             temperature: 0.2,
+            reasoning_effort: 'medium',
         });
 
-        const answer = String(response?.choices?.[0]?.message?.content || '').trim();
+        const choice = response?.choices?.[0];
+        const answer = String(choice?.message?.content || '').trim();
+
+        // logs no backend (IMPORTANTE)
+        console.log('--- GROQ DEBUG ---');
+        console.log('finish_reason:', choice?.finish_reason);
+        console.log('content length:', answer.length);
+        console.log('usage:', response?.usage);
+        console.log('model:', response?.model);
+        console.log('------------------');
 
         if (!answer) {
             return res.status(502).json({
-                error: 'A IA não retornou conteúdo na resposta',
+                error: 'Resposta vazia da IA',
+
+                debug: {
+                    finish_reason: choice?.finish_reason,
+                    model: response?.model,
+                    usage: response?.usage,
+
+                    // ajuda MUITO pra saber se o prompt está gigante
+                    prompt_chars: userPrompt.length,
+                    system_prompt_chars: systemPrompt.length,
+
+                    // preview (evita estourar payload)
+                    prompt_preview: userPrompt.slice(0, 300),
+
+                    // se existir reasoning (caso do seu erro atual)
+                    has_reasoning: !!choice?.message?.reasoning,
+                    reasoning_preview: choice?.message?.reasoning?.slice?.(0, 200),
+                }
             });
         }
 
         return res.json({ answer });
+
     } catch (error) {
         console.error('AI request error:', error);
 
@@ -241,6 +270,13 @@ app.post('/api/test-client', (req, res) => {
     res.status(201).json(client);
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
     console.log(`Servidor rodando na porta ${PORT}`);
+
+    try {
+        await startBot();
+        console.log('Bot iniciado com sucesso');
+    } catch (error) {
+        console.error('Erro ao iniciar o bot:', error);
+    }
 });

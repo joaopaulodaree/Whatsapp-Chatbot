@@ -272,6 +272,13 @@ function getDefaultCsvPath() {
   return path.resolve(__dirname, '../../..', 'Souarte_cleaned.CSV');
 }
 
+function formatCurrencyBR(value) {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(Number(value || 0));
+}
+
 module.exports = {
   extractClientInfo,
   scoreCandidate,
@@ -280,4 +287,5 @@ module.exports = {
   getDefaultCsvPath,
   aggregateByName,
   parseCurrency,
+  formatCurrencyBR,
 };
