@@ -1,11 +1,32 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const { setBotConnected } = require('./store');
-const TEST_NUMBERS = ['118244862099469@lid', '226860222951446@lid'];
+const TEST_NUMBERS = ['118244862099469@lid', '226860222951446@lid', '553198188053@c.us'];
 const sessions = new Map();
 
 let clientInstance = null;
 let botStarted = false;
+
+async function getAiResponse(query, userRequest) {
+  const response = await fetch('http://localhost:3001/api/ai-response', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      q: query,
+      request: userRequest,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data?.error || 'Erro ao consultar a API');
+  }
+
+  return data.answer;
+}
 
 function createClient() {
   const client = new Client({
@@ -150,10 +171,18 @@ function createClient() {
 
       if (session.step === 'crediario_duvida') {
         session.data.userRequest = rawBody;
-        session.step = 'final';
         sessions.set(from, session);
 
-        await msg.reply('Recebi sua solicitação. Agora vou consultar os dados.');
+        try {
+          const answer = await getAiResponse(session.data.name, session.data.userRequest);
+          await msg.reply(answer);
+        } catch (error) {
+          console.error('Erro ao consultar API:', error);
+          await msg.reply('Desculpe, ocorreu um erro ao processar sua solicitação. Por favor, tente novamente em instantes.');
+        }
+
+        session.step = 'final';
+        sessions.set(from, session);
         return;
       }
 
