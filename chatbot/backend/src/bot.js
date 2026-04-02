@@ -1,11 +1,14 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const { setBotConnected } = require('./store');
-const TEST_NUMBERS = ['118244862099469@lid', '226860222951446@lid', '553198188053@c.us'];
+const { registerDemandFromMessage, getContactData } = require('./services/demand.service');
+
+const TEST_NUMBERS = ['118244862099469@lid', '226860222951446@lid', '553198188053@c.us', '153476478832799@lid'];
 const sessions = new Map();
 
 let clientInstance = null;
 let botStarted = false;
+let botStartedAt = null;
 
 async function getAiResponse(query, userRequest) {
   const response = await fetch('http://localhost:3001/api/ai-response', {
@@ -49,6 +52,7 @@ function createClient() {
   client.on('ready', () => {
     console.log('READY');
     setBotConnected(true);
+    botStartedAt = Math.floor(Date.now() / 1000);
   });
 
   client.on('auth_failure', (msg) => {
@@ -64,19 +68,23 @@ function createClient() {
   client.on('message', async (msg) => {
     try {
       const from = msg.from;
-
+      
+      const { whatsappId, phone, pushName } = await getContactData(msg);
+      
       console.log({
-        from: msg.from,
-        fromMe: msg.fromMe,
-        isStatus: msg.isStatus,
-        broadcast: msg.broadcast,
-        type: msg.type,
+        whatsappId,
+        phone,
+        pushName,
         body: msg.body,
       });
+      
+      if (botStartedAt && msg.timestamp < botStartedAt) {
+        return;
+      }
 
       if (!TEST_NUMBERS.includes(from)) return;
       if (msg.fromMe) return;
-
+      
       if (
         msg.isStatus ||
         msg.broadcast ||
@@ -87,9 +95,9 @@ function createClient() {
       ) {
         return;
       }
-
+      
       if (!msg.body || typeof msg.body !== 'string') return;
-
+      
       const rawBody = msg.body.trim();
       const body = rawBody.toLowerCase();
 
@@ -98,10 +106,10 @@ function createClient() {
 
         await msg.reply(
           'Olá. Somos a Souarte Nova Era! Por favor, escolha uma opção abaixo para agilizarmos seu atendimento:' +
-            '\n1. Checar crediário' +
-            '\n2. Fazer um orçamento' +
-            '\n3. Informações sobre produtos' +
-            '\n4. Falar com uma vendedora'
+          '\n1. Checar crediário' +
+          '\n2. Fazer um orçamento' +
+          '\n3. Informações sobre produtos' +
+          '\n4. Falar com uma vendedora'
         );
         return;
       }
@@ -115,10 +123,10 @@ function createClient() {
 
         await msg.reply(
           'Menu principal:' +
-            '\n1. Checar crediário' +
-            '\n2. Fazer um orçamento' +
-            '\n3. Informações sobre produtos' +
-            '\n4. Falar com uma vendedora'
+          '\n1. Checar crediário' +
+          '\n2. Fazer um orçamento' +
+          '\n3. Informações sobre produtos' +
+          '\n4. Falar com uma vendedora'
         );
         return;
       }
@@ -190,16 +198,16 @@ function createClient() {
         if (body === 'sim') {
           await msg.reply(
             `Contatos:\n` +
-              `1. Claudirene - (31) 99557-1471\n` +
-              `2. Fernanda (Móveis) - (31) 99913-2989\n` +
-              `3. Junia - (31) 99576-2208\n` +
-              `4. Keila - (31) 98707-6481\n` +
-              `5. Márcia Vieira - (31) 99501-0998\n` +
-              `6. Paloma - (31) 99493-7379\n` +
-              `7. Vanderlea (Móveis) - (31) 99752-6694\n` +
-              `8. Luenia - (31) 98266-7576\n` +
-              `9. Márcia Helena - (31) 99585-7612\n` +
-              `10. Lartione (Gerente) - +55 31 99647-4671`
+            `1. Claudirene - (31) 99557-1471\n` +
+            `2. Fernanda (Móveis) - (31) 99913-2989\n` +
+            `3. Junia - (31) 99576-2208\n` +
+            `4. Keila - (31) 98707-6481\n` +
+            `5. Márcia Vieira - (31) 99501-0998\n` +
+            `6. Paloma - (31) 99493-7379\n` +
+            `7. Vanderlea (Móveis) - (31) 99752-6694\n` +
+            `8. Luenia - (31) 98266-7576\n` +
+            `9. Márcia Helena - (31) 99585-7612\n` +
+            `10. Lartione (Gerente) - +55 31 99647-4671`
           );
 
           session.step = 'final';
@@ -209,6 +217,10 @@ function createClient() {
 
         if (body === 'não' || body === 'nao') {
           await msg.reply('Entendido. Em breve uma de nossas vendedoras irá entrar em contato com você por aqui. Por favor, aguarde.');
+          await registerDemandFromMessage(msg, {
+            type: 'vendedora',
+            description: 'Cliente deseja falar com uma vendedora',
+          });
           session.step = 'final';
           sessions.set(from, session);
           return;

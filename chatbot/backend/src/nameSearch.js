@@ -1,5 +1,7 @@
 function normalizeText(text) {
   return String(text || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toUpperCase()
     .replace(/\s+/g, " ")
     .trim();
@@ -269,7 +271,7 @@ function loadCsv(filePath, separator = ';') {
 }
 
 function getDefaultCsvPath() {
-  return path.resolve(__dirname, '../../..', 'Souarte_cleaned.CSV');
+  return path.resolve(__dirname, '../../data', 'Souarte_cleaned.CSV');
 }
 
 function formatCurrencyBR(value) {

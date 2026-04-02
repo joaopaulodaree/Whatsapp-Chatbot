@@ -75,3 +75,4 @@ frontend/build/
 
 # Database
 *.csv
+*.db*

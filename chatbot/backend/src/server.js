@@ -1,17 +1,15 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 const Groq = require('groq-sdk');
 const {
-    getClients,
-    upsertClient,
     getBotStatus,
     toggleBotEnabled,
 } = require('./store');
 
+const { listDemands, updateDemandStatus } = require('./db/repositories/demands.repository');
+
 const { searchClientsByName, loadCsv, getDefaultCsvPath, aggregateByName, formatCurrencyBR } = require('./nameSearch');
-const { env } = require('process');
 const { startBot } = require('./bot');
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -22,6 +20,9 @@ const groq = new Groq({ apiKey: GROQ_API_KEY });
 const app = express();
 const PORT = 3001;
 
+const { createTables } = require('./db/schema');
+createTables();
+
 let csvRows = [];
 let csvLoaded = false;
 let csvLoadError = null;
@@ -30,6 +31,8 @@ const CSV_FILE_PATH = process.env.CSV_PATH || getDefaultCsvPath();
 
 app.use(cors());
 app.use(express.json());
+
+
 
 loadCsv(CSV_FILE_PATH)
     .then((rows) => {
@@ -44,11 +47,6 @@ loadCsv(CSV_FILE_PATH)
 
 app.get('/api/health', (req, res) => {
     res.json({ ok: true, message: 'Backend funcionando' });
-});
-
-app.get('/api/clients', (req, res) => {
-    const clients = getClients();
-    res.json(clients);
 });
 
 app.get('/api/search-client', (req, res) => {
@@ -259,15 +257,35 @@ app.post('/api/toggle-bot', (req, res) => {
     res.json({ enabled, connected: getBotStatus().botConnected, message: enabled ? 'Bot ativado' : 'Bot desativado' });
 });
 
-app.post('/api/test-client', (req, res) => {
-    const client = upsertClient({
-        id: 'test-client',
-        phone: '123456789',
-        name: 'Cliente Teste',
-        summary: 'Checar crediário - João Paulo Souza',
-        lastMessage: 'Mensagem de teste',
-    });
-    res.status(201).json(client);
+app.get('/api/demands', (req, res) => {
+  const { search, type, status, sortBy, order } = req.query;
+
+  const demands = listDemands({
+    search,
+    type,
+    status,
+    sortBy,
+    order,
+  });
+
+  res.json(demands);
+});
+
+app.patch('/api/demands/:id/status', (req, res) => {
+  const demandId = Number(req.params.id);
+  const { status } = req.body;
+
+  if (!['pending', 'in_progress', 'done'].includes(status)) {
+    return res.status(400).json({ error: 'Status inválido' });
+  }
+
+  const updated = updateDemandStatus(demandId, status);
+
+  if (!updated) {
+    return res.status(404).json({ error: 'Demanda não encontrada' });
+  }
+
+  res.json(updated);
 });
 
 app.listen(PORT, async () => {
