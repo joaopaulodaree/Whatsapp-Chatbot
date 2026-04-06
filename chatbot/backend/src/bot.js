@@ -1,14 +1,15 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
-const { setBotConnected } = require('./store');
+const { setBotConnected, setBotEnabled, getBotStatus } = require('./store');
 const { registerDemandFromMessage, getContactData } = require('./services/demand.service');
+const { getMessages } = require('./messages');
 
-const TEST_NUMBERS = ['118244862099469@lid', '226860222951446@lid', '553198188053@c.us', '153476478832799@lid'];
+const TEST_NUMBERS = ['118244862099469@lid', '226860222951446@lid', '553198188053@c.us'];
 const sessions = new Map();
 
 let clientInstance = null;
-let botStarted = false;
 let botStartedAt = null;
+let currentQrString = null;
 
 async function getAiResponse(query, userRequest) {
   const response = await fetch('http://localhost:3001/api/ai-response', {
@@ -31,60 +32,61 @@ async function getAiResponse(query, userRequest) {
   return data.answer;
 }
 
-function createClient() {
-  const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: {
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    },
-  });
-
+function handleBotEvents(client) {
   client.on('qr', (qr) => {
+    currentQrString = qr;
+    setBotConnected(false);
     console.log('QR recebido. Escaneie com o WhatsApp.');
     qrcode.generate(qr, { small: true });
   });
 
   client.on('authenticated', () => {
+    currentQrString = null;
     console.log('AUTHENTICATED');
   });
 
   client.on('ready', () => {
+    currentQrString = null;
     console.log('READY');
     setBotConnected(true);
     botStartedAt = Math.floor(Date.now() / 1000);
   });
 
   client.on('auth_failure', (msg) => {
+    currentQrString = null;
     console.error('AUTHENTICATION FAILURE', msg);
     setBotConnected(false);
   });
 
   client.on('disconnected', (reason) => {
+    currentQrString = null;
     console.log('DISCONNECTED', reason);
     setBotConnected(false);
   });
 
   client.on('message', async (msg) => {
+    const status = getBotStatus();
+    if (!status.botEnabled) return;
+
     try {
       const from = msg.from;
-      
+
       const { whatsappId, phone, pushName } = await getContactData(msg);
-      
+
       console.log({
         whatsappId,
         phone,
         pushName,
         body: msg.body,
       });
-      
+
       if (botStartedAt && msg.timestamp < botStartedAt) {
         return;
       }
 
       if (!TEST_NUMBERS.includes(from)) return;
       if (msg.fromMe) return;
-      
+
       if (
         msg.isStatus ||
         msg.broadcast ||
@@ -95,22 +97,17 @@ function createClient() {
       ) {
         return;
       }
-      
+
       if (!msg.body || typeof msg.body !== 'string') return;
-      
+
       const rawBody = msg.body.trim();
       const body = rawBody.toLowerCase();
 
+      const msgs = getMessages();
+
       if (!sessions.has(from)) {
         sessions.set(from, { step: 'menu', data: {} });
-
-        await msg.reply(
-          'Olá. Somos a Souarte Nova Era! Por favor, escolha uma opção abaixo para agilizarmos seu atendimento:' +
-          '\n1. Checar crediário' +
-          '\n2. Fazer um orçamento' +
-          '\n3. Informações sobre produtos' +
-          '\n4. Falar com uma vendedora'
-        );
+        await msg.reply(msgs.greeting + '\n' + msgs.menu_options);
         return;
       }
 
@@ -120,14 +117,7 @@ function createClient() {
         session.step = 'menu';
         session.data = {};
         sessions.set(from, session);
-
-        await msg.reply(
-          'Menu principal:' +
-          '\n1. Checar crediário' +
-          '\n2. Fazer um orçamento' +
-          '\n3. Informações sobre produtos' +
-          '\n4. Falar com uma vendedora'
-        );
+        await msg.reply(msgs.menu_label + '\n' + msgs.menu_options);
         return;
       }
 
@@ -136,35 +126,18 @@ function createClient() {
           session.step = 'crediario_nome';
           session.data = {};
           sessions.set(from, session);
-
-          await msg.reply('Por favor, informe seu nome para checarmos seu crediário.');
+          await msg.reply(msgs.crediario_nome_request);
           return;
         }
 
         if (body === '2') {
-          session.step = 'orcamento';
-          sessions.set(from, session);
-          await msg.reply('Por favor, nos dê mais detalhes sobre o orçamento que deseja solicitar.');
-          return;
-        }
-
-        if (body === '3') {
-          session.step = 'produtos';
-          sessions.set(from, session);
-          await msg.reply('Por favor, nos informe qual produto você gostaria de saber mais informações.');
-          return;
-        }
-
-        if (body === '4') {
           session.step = 'vendedora';
           sessions.set(from, session);
-          await msg.reply(
-            "Deseja entrar em contato diretamente com uma de nossas vendedoras? Responda 'sim' para receber os contatos ou 'não' para aguardar o retorno por aqui."
-          );
+          await msg.reply(msgs.vendedora_question);
           return;
         }
 
-        await msg.reply("Por favor, escolha uma opção válida: 1, 2, 3 ou 4. Se quiser voltar ao início, digite 'menu'.");
+        await msg.reply(msgs.invalid_option);
         return;
       }
 
@@ -172,8 +145,7 @@ function createClient() {
         session.data.name = rawBody;
         session.step = 'crediario_duvida';
         sessions.set(from, session);
-
-        await msg.reply('Qual sua dúvida sobre o crediário?');
+        await msg.reply(msgs.crediario_duvida_request);
         return;
       }
 
@@ -186,37 +158,62 @@ function createClient() {
           await msg.reply(answer);
         } catch (error) {
           console.error('Erro ao consultar API:', error);
-          await msg.reply('Desculpe, ocorreu um erro ao processar sua solicitação. Por favor, tente novamente em instantes.');
+          await msg.reply(msgs.crediario_error);
         }
 
-        session.step = 'final';
+        session.step = 'crediario_continue';
         sessions.set(from, session);
+        await msg.reply(msgs.crediario_continue_question);
+        return;
+      }
+
+      if (session.step === 'crediario_new_duvida') {
+        session.data.userRequest = rawBody;
+        sessions.set(from, session);
+
+        try {
+          const answer = await getAiResponse(session.data.name, session.data.userRequest);
+          await msg.reply(answer);
+        } catch (error) {
+          console.error('Erro ao consultar API:', error);
+          await msg.reply(msgs.crediario_error);
+        }
+
+        session.step = 'crediario_continue';
+        sessions.set(from, session);
+        await msg.reply(msgs.crediario_continue_question);
+        return;
+      }
+
+      if (session.step === 'crediario_continue') {
+        if (body === 'sim') {
+          session.step = 'crediario_new_duvida';
+          sessions.set(from, session);
+          await msg.reply(msgs.crediario_new_duvida_request);
+          return;
+        }
+
+        if (body === 'não' || body === 'nao') {
+          await msg.reply(msgs.final_prompt);
+          session.step = 'final';
+          sessions.set(from, session);
+          return;
+        }
+
+        await msg.reply(msgs.yes_or_no);
         return;
       }
 
       if (session.step === 'vendedora') {
         if (body === 'sim') {
-          await msg.reply(
-            `Contatos:\n` +
-            `1. Claudirene - (31) 99557-1471\n` +
-            `2. Fernanda (Móveis) - (31) 99913-2989\n` +
-            `3. Junia - (31) 99576-2208\n` +
-            `4. Keila - (31) 98707-6481\n` +
-            `5. Márcia Vieira - (31) 99501-0998\n` +
-            `6. Paloma - (31) 99493-7379\n` +
-            `7. Vanderlea (Móveis) - (31) 99752-6694\n` +
-            `8. Luenia - (31) 98266-7576\n` +
-            `9. Márcia Helena - (31) 99585-7612\n` +
-            `10. Lartione (Gerente) - +55 31 99647-4671`
-          );
-
+          await msg.reply(msgs.vendedora_contacts);
           session.step = 'final';
           sessions.set(from, session);
           return;
         }
 
         if (body === 'não' || body === 'nao') {
-          await msg.reply('Entendido. Em breve uma de nossas vendedoras irá entrar em contato com você por aqui. Por favor, aguarde.');
+          await msg.reply(msgs.vendedora_wait);
           await registerDemandFromMessage(msg, {
             type: 'vendedora',
             description: 'Cliente deseja falar com uma vendedora',
@@ -226,55 +223,88 @@ function createClient() {
           return;
         }
 
-        await msg.reply("Por favor, responda 'sim' ou 'não'.");
+        await msg.reply(msgs.yes_or_no);
         return;
       }
 
       if (session.step === 'orcamento') {
-        await msg.reply('Orçamento recebido. Em breve entraremos em contato.');
+        await msg.reply(msgs.orcamento_confirm);
         session.step = 'final';
         sessions.set(from, session);
         return;
       }
 
       if (session.step === 'produtos') {
-        await msg.reply('Solicitação sobre produto recebida. Em breve retornamos com detalhes.');
+        await msg.reply(msgs.produtos_confirm);
         session.step = 'final';
         sessions.set(from, session);
         return;
       }
 
       if (session.step === 'final') {
-        await msg.reply("Se precisar de mais alguma coisa, é só digitar 'menu' para voltar ao início.");
+        await msg.reply(msgs.final_prompt);
         return;
       }
     } catch (error) {
       console.error('Error handling message:', error);
 
       try {
-        await msg.reply('Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.');
+        const msgs = getMessages();
+        await msg.reply(msgs.generic_error);
       } catch (replyError) {
         console.error('Error sending fallback message:', replyError);
       }
     }
   });
+}
 
+function createClient() {
+  const client = new Client({
+    authStrategy: new LocalAuth(),
+    puppeteer: {
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    },
+  });
+
+  handleBotEvents(client);
   return client;
 }
 
 async function startBot() {
-  if (botStarted) {
+  if (clientInstance) {
     console.log('Bot já foi iniciado. Ignorando nova inicialização.');
     return clientInstance;
   }
 
   clientInstance = createClient();
-  botStarted = true;
+  setBotEnabled(true);
 
   await clientInstance.initialize();
   console.log('Inicialização do bot disparada com sucesso.');
 
   return clientInstance;
+}
+
+async function stopBot() {
+  if (!clientInstance) {
+    console.log('Bot já está desligado.');
+    return;
+  }
+
+  const current = clientInstance;
+  clientInstance = null;
+  botStartedAt = null;
+  currentQrString = null;
+
+  await current.destroy().catch((err) => console.error('Erro ao destruir bot:', err));
+  setBotEnabled(false);
+  setBotConnected(false);
+  console.log('Bot desligado com sucesso.');
+}
+
+function getBotQr() {
+  return currentQrString;
 }
 
 function getBotClient() {
@@ -283,5 +313,7 @@ function getBotClient() {
 
 module.exports = {
   startBot,
+  stopBot,
   getBotClient,
+  getBotQr,
 };

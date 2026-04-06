@@ -1,0 +1,56 @@
+{
+  "name": "souarte-chatbot",
+  "version": "1.0.0",
+  "description": "Souarte Chatbot - WhatsApp Bot",
+  "main": "main.js",
+  "author": "Souarte",
+  "scripts": {
+    "electron:dev": "concurrently \"cd backend && npm start\" \"cd frontend && npx vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:start": "electron .",
+    "electron:build": "npm run build:frontend && electron-builder",
+    "build:frontend": "cd frontend && npm run build"
+  },
+  "build": {
+    "appId": "com.souarte.chatbot",
+    "productName": "Souarte Chatbot",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "main.js",
+      "backend/**/*",
+      "frontend/dist/**/*",
+      "build/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "icon": "build/icon.png",
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Souarte Chatbot"
+    },
+    "asar": false,
+    "npmRebuild": false,
+    "nodeGypRebuild": false,
+    "buildDependenciesFromSource": false
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "electron": "^41.1.1",
+    "electron-builder": "^26.8.1",
+    "jimp": "^1.6.0",
+    "wait-on": "^9.0.4"
+  }
+}

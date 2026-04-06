@@ -1,6 +1,9 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const Groq = require('groq-sdk');
 const {
     getBotStatus,
@@ -10,7 +13,9 @@ const {
 const { listDemands, updateDemandStatus, deleteDemand } = require('./db/repositories/demands.repository');
 
 const { searchClientsByName, loadCsv, getDefaultCsvPath, aggregateByName, formatCurrencyBR } = require('./nameSearch');
-const { startBot } = require('./bot');
+const { startBot, stopBot, getBotQr } = require('./bot');
+const cleanCsv = require('./cleanCsv');
+const { getMessages, saveMessages } = require('./messages');
 
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL_PREFERENCE = (process.env.GROQ_MODEL || 'openai/gpt-oss-120b').trim();
@@ -23,25 +28,66 @@ const PORT = 3001;
 const { createTables } = require('./db/schema');
 createTables();
 
+const DATA_DIR = path.resolve(__dirname, '../../data');
+const STORAGE = multer.diskStorage({
+    destination: function (req, file, cb) {
+        if (!fs.existsSync(DATA_DIR)) {
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+        }
+        cb(null, DATA_DIR);
+    },
+    filename: function (req, file, cb) {
+        cb(null, 'uploaded.CSV');
+    },
+});
+const upload = multer({
+    storage: STORAGE,
+    fileFilter: function (req, file, cb) {
+        if (file.mimetype === 'text/csv' || file.originalname.endsWith('.CSV') || file.originalname.endsWith('.csv')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Apenas arquivos .CSV são aceitos'));
+        }
+    },
+});
+
 let csvRows = [];
 let csvLoaded = false;
 let csvLoadError = null;
 
-const CSV_FILE_PATH = process.env.CSV_PATH || getDefaultCsvPath();
+let CSV_FILE_PATH = process.env.CSV_PATH || getDefaultCsvPath();
+
+const COLUMNS_TO_REMOVE = [0, 1, 5, 6, 7, 12, 13, 14, 15, 16, 17, 18, 24, 25, 26, 27, 28, 29, 30, 31, 32];
+
+function cleanUploadedCsv() {
+    const inputPath = path.resolve(DATA_DIR, 'uploaded.CSV');
+    const outputPath = path.resolve(DATA_DIR, 'uploaded_cleaned.CSV');
+    cleanCsv(inputPath, outputPath, COLUMNS_TO_REMOVE);
+    fs.rmSync(inputPath);
+    console.log(`CSV limpo gerado em: ${outputPath} (original removido)`);
+    return outputPath;
+}
+
+async function loadCSVAtPath(filePath) {
+    try {
+        const rows = await loadCsv(filePath);
+        csvRows = rows;
+        csvLoaded = true;
+        csvLoadError = null;
+        console.log(`CSV carregado com ${rows.length} linhas de ${filePath}`);
+        return { ok: true, rowCount: rows.length };
+    } catch (error) {
+        csvLoaded = false;
+        csvLoadError = error;
+        console.error(`Falha ao carregar CSV em ${filePath}:`, error);
+        return { ok: false, error: error.message };
+    }
+}
 
 app.use(cors());
 app.use(express.json());
 
-loadCsv(CSV_FILE_PATH)
-    .then((rows) => {
-        csvRows = rows;
-        csvLoaded = true;
-        console.log(`CSV carregado com ${rows.length} linhas de ${CSV_FILE_PATH}`);
-    })
-    .catch((error) => {
-        csvLoadError = error;
-        console.error(`Falha ao carregar CSV em ${CSV_FILE_PATH}:`, error);
-    });
+loadCSVAtPath(CSV_FILE_PATH);
 
 app.get('/api/health', (req, res) => {
     res.json({ ok: true, message: 'Backend funcionando' });
@@ -250,9 +296,26 @@ app.get('/api/bot-status', (req, res) => {
     res.json(getBotStatus());
 });
 
-app.post('/api/toggle-bot', (req, res) => {
-    const enabled = toggleBotEnabled();
-    res.json({ enabled, connected: getBotStatus().botConnected, message: enabled ? 'Bot ativado' : 'Bot desativado' });
+app.post('/api/bot/start', async (req, res) => {
+    try {
+        await startBot();
+        res.json({ ok: true, message: 'Bot ativado' });
+    } catch (err) {
+        res.status(500).json({ error: 'Erro ao ativar bot', details: err.message });
+    }
+});
+
+app.post('/api/bot/stop', async (req, res) => {
+    try {
+        await stopBot();
+        res.json({ ok: true, message: 'Bot desativado' });
+    } catch (err) {
+        res.status(500).json({ error: 'Erro ao desativar bot', details: err.message });
+    }
+});
+
+app.get('/api/bot/qr', (req, res) => {
+    res.json({ qr: getBotQr() || null });
 });
 
 app.get('/api/demands', (req, res) => {
@@ -303,6 +366,102 @@ app.delete('/api/demands/:id', (req, res) => {
     success: true,
     deleted,
   });
+});
+
+// --- CSV Management Endpoints ---
+
+app.get('/api/csv/files', (req, res) => {
+    try {
+        if (!fs.existsSync(DATA_DIR)) {
+            return res.json({ files: [], current: CSV_FILE_PATH, loaded: csvLoaded });
+        }
+        const files = fs.readdirSync(DATA_DIR)
+            .filter((f) => f.toLowerCase().endsWith('.csv'))
+            .map((f) => ({
+                name: f,
+                path: path.resolve(DATA_DIR, f),
+                size: fs.statSync(path.resolve(DATA_DIR, f)).size,
+                mtime: fs.statSync(path.resolve(DATA_DIR, f)).mtime,
+            }));
+        res.json({ files, current: CSV_FILE_PATH, loaded: csvLoaded, error: csvLoadError?.message });
+    } catch (err) {
+        res.status(500).json({ error: 'Erro ao listar arquivos CSV', details: err.message });
+    }
+});
+
+app.post('/api/csv/upload', upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+        }
+        const uploadedPath = path.resolve(DATA_DIR, 'uploaded.CSV');
+        console.log(`CSV original salvo em: ${uploadedPath}`);
+        const cleanedPath = cleanUploadedCsv();
+        CSV_FILE_PATH = cleanedPath;
+        const result = await loadCSVAtPath(cleanedPath);
+        if (result.ok) {
+            res.json({ ok: true, message: 'CSV processado e carregado com sucesso', rowCount: result.rowCount, file: cleanedPath });
+        } else {
+            res.status(500).json({ ok: false, error: result.error });
+        }
+    } catch (err) {
+        res.status(500).json({ error: 'Erro ao processar upload', details: err.message });
+    }
+});
+
+app.post('/api/csv/reload', async (req, res) => {
+    const { filePath } = req.body || {};
+    const targetPath = filePath || CSV_FILE_PATH;
+    CSV_FILE_PATH = targetPath;
+    const result = await loadCSVAtPath(targetPath);
+    if (result.ok) {
+        res.json({ ok: true, message: 'CSV recarregado', rowCount: result.rowCount, file: targetPath });
+    } else {
+        res.status(500).json({ ok: false, error: result.error });
+    }
+});
+
+app.delete('/api/csv/files/:filename', async (req, res) => {
+    const filename = req.params.filename;
+    const filePath = path.resolve(DATA_DIR, filename);
+    try {
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ error: 'Arquivo não encontrado' });
+        }
+        fs.rmSync(filePath);
+        if (filePath === CSV_FILE_PATH) {
+            const fallback = getDefaultCsvPath();
+            if (fs.existsSync(fallback)) {
+                CSV_FILE_PATH = fallback;
+                await loadCSVAtPath(fallback);
+            } else {
+                csvRows = [];
+                csvLoaded = false;
+            }
+        }
+        res.json({ ok: true, message: 'Arquivo removido' });
+    } catch (err) {
+        res.status(500).json({ error: 'Erro ao remover arquivo', details: err.message });
+    }
+});
+
+// --- Bot Messages Endpoints ---
+
+app.get('/api/bot/messages', (req, res) => {
+    try {
+        res.json(getMessages());
+    } catch (err) {
+        res.status(500).json({ error: 'Erro ao ler mensagens do bot', details: err.message });
+    }
+});
+
+app.put('/api/bot/messages', (req, res) => {
+    try {
+        saveMessages(req.body);
+        res.json({ ok: true, message: 'Mensagens atualizadas com sucesso' });
+    } catch (err) {
+        res.status(500).json({ error: 'Erro ao salvar mensagens do bot', details: err.message });
+    }
 });
 
 app.listen(PORT, async () => {

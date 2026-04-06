@@ -1,0 +1,21 @@
+{
+  "greeting": "Olá. Somos a Souarte Nova Era! Por favor, escolha uma opção abaixo para agilizarmos seu atendimento:",
+  "menu_options": "1. Checar crediário\n2. Falar com uma vendedora\n3. Outros",
+  "menu_label": "Menu principal:",
+  "crediario_nome_request": "Por favor, informe seu nome completo para checarmos seu crediário.",
+  "crediario_duvida_request": "Qual sua dúvida sobre o crediário?",
+  "crediario_error": "Desculpe, ocorreu um erro ao processar sua solicitação. Por favor, tente novamente em instantes.",
+  "crediario_continue_question": "Tem mais alguma dúvida? Responda 'sim' para perguntar novamente ou 'não' para encerrar.",
+  "crediario_new_duvida_request": "Qual sua nova dúvida?",
+  "orcamento_request": "Por favor, nos dê mais detalhes sobre o orçamento que deseja solicitar.",
+  "orcamento_confirm": "Orçamento recebido. Em breve entraremos em contato.",
+  "produtos_request": "Por favor, nos informe qual produto você gostaria de saber mais informações.",
+  "produtos_confirm": "Solicitação sobre produto recebida. Em breve retornamos com detalhes.",
+  "vendedora_question": "Deseja entrar em contato diretamente com uma de nossas vendedoras? Responda 'sim' para receber os contatos ou 'não' para aguardar o retorno por aqui.",
+  "vendedora_contacts": "Contatos:\n1. Claudirene - (31) 99557-1471\n2. Fernanda (Móveis) - (31) 99913-2989\n3. Junia - (31) 99576-2208\n4. Keila - (31) 98707-6481\n5. Márcia Vieira - (31) 99501-0998\n6. Paloma - (31) 99493-7379\n7. Vanderlea (Móveis) - (31) 99752-6694\n8. Luenia - (31) 98266-7576\n9. Márcia Helena - (31) 99585-7612\n10. Lartione (Gerante) - +55 31 99647-4671\n\nEntre em contato diretamente com a vendedora de sua preferência!",
+  "vendedora_wait": "Entendido. Em breve uma de nossas vendedoras irá entrar em contato com você por aqui. Por favor, aguarde.",
+  "invalid_option": "Por favor, escolha uma opção válida: 1, 2, 3 ou 4.",
+  "yes_or_no": "Por favor, responda 'sim' ou 'não'.",
+  "final_prompt": "Se precisar de mais alguma coisa, é só digitar 'menu' para voltar ao início.",
+  "generic_error": "Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente em alguns instantes."
+}
