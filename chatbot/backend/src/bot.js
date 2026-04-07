@@ -98,9 +98,7 @@ function handleBotEvents(client) {
         return;
       }
 
-      if (!msg.body || typeof msg.body !== 'string') return;
-
-      const rawBody = msg.body.trim();
+      const rawBody = msg.body?.trim() || '';
       const body = rawBody.toLowerCase();
 
       const msgs = getMessages();
@@ -113,7 +111,7 @@ function handleBotEvents(client) {
 
       const session = sessions.get(from);
 
-      if (body === 'menu') {
+      if (body === 'menu' && !msg.hasMedia) {
         session.step = 'menu';
         session.data = {};
         sessions.set(from, session);
@@ -238,19 +236,57 @@ function handleBotEvents(client) {
         return;
       }
 
-      if (session.step === 'pagamento') {
-        if (!msg.hasMedia) {
-          await msg.reply("Aguardando o comprovante (imagem). Caso queira voltar ao início, digite 'menu'.");
+      if (session.step === 'pagamento' || session.step === 'pagamento_nome' || session.step === 'pagamento_imagem') {
+        const isImage = msg.hasMedia || msg.type === 'image' || msg.type === 'document' || msg.type === 'sticker';
+
+        if (isImage) {
+          session.data.hasImage = true;
+          sessions.set(from, session);
+
+          // Se já tem nome recebido, completa e registra demanda
+          if (session.data.name) {
+            await msg.reply(msgs.pagamento_final);
+            await registerDemandFromMessage(msg, {
+              type: 'crediario',
+              description: `Cliente: ${session.data.name} - comprovante recebido`,
+            });
+            session.step = 'final';
+            sessions.set(from, session);
+            return;
+          }
+
+          // Só recebeu imagem, pede o nome
+          await msg.reply(msgs.pagamento_imagem_confirm);
+          session.step = 'pagamento_nome';
+          sessions.set(from, session);
           return;
         }
 
-        await msg.reply(msgs.pagamento_confirm);
-        await registerDemandFromMessage(msg, {
-          type: 'crediario',
-          description: 'Cliente enviou comprovante - checar pix/pagamento',
-        });
-        session.step = 'final';
-        sessions.set(from, session);
+        // Texto (nome)
+        if (rawBody) {
+          session.data.name = rawBody;
+          sessions.set(from, session);
+
+          // Se já tem imagem, completa e registra demanda
+          if (session.data.hasImage) {
+            await msg.reply(msgs.pagamento_final);
+            await registerDemandFromMessage(msg, {
+              type: 'crediario',
+              description: `Cliente: ${session.data.name} - comprovante recebido`,
+            });
+            session.step = 'final';
+            sessions.set(from, session);
+            return;
+          }
+
+          // Só recebeu nome, pede imagem
+          session.step = 'pagamento_imagem';
+          sessions.set(from, session);
+          await msg.reply(msgs.pagamento_nome_confirm.replace('{name}', rawBody));
+          return;
+        }
+
+        await msg.reply("Por favor, envie o comprovante (imagem) ou o nome do crediário (texto).");
         return;
       }
 
@@ -321,6 +357,30 @@ function handleBotEvents(client) {
         console.error('Error sending fallback message:', replyError);
       }
     }
+  });
+
+  // Fallback: quando a mídia é detectada após download completo
+  client.on('message_media', async (msg) => {
+    const status = getBotStatus();
+    if (!status.bot_enabled) return;
+
+    const from = msg.from;
+    if (!TEST_NUMBERS.includes(from)) return;
+    if (msg.fromMe) return;
+    if (from.endsWith('@g.us') || from.endsWith('@newsletter')) return;
+
+    const session = sessions.get(from);
+    if (!session) return;
+    if (session.step !== 'pagamento') return;
+
+    const msgs = getMessages();
+    await msg.reply(msgs.pagamento_confirm);
+    await registerDemandFromMessage(msg, {
+      type: 'pagamento',
+      description: 'Cliente enviou comprovante via message_media',
+    });
+    session.step = 'final';
+    sessions.set(from, session);
   });
 }
 

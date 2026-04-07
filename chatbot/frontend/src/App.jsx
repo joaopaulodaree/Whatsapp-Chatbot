@@ -195,7 +195,8 @@ const BOT_MESSAGE_LABELS = {
   vendedora_question: "Pergunta vendedora",
   vendedora_contacts: "Contatos das vendedoras",
   vendedora_wait: "Mensagem de espera (vendedora)",
-  pagamento_request: "Pedido de comprovante (pagamento)",
+  pagamento_request: "Pedido de comprovante e nome (pagamento)",
+  pagamento_nome_confirm: "Confirmação do nome recebido (pagamento, use {name} como placeholder)",
   pagamento_confirm: "Confirmação de recebimento (pagamento)",
   outros_request: "Pergunta de outros assuntos",
   outros_confirm: "Confirmação de recebimento (outros)",
@@ -306,6 +307,7 @@ function CsvSettingsPage({ onBack }) {
   const [botEnabled, setBotEnabled] = useState(false);
   const [botConnected, setBotConnected] = useState(false);
   const [qrCode, setQrCode] = useState(null);
+  const [clearingCache, setClearingCache] = useState(false);
 
   const [files, setFiles] = useState([]);
   const [currentFile, setCurrentFile] = useState("");
@@ -383,6 +385,26 @@ function CsvSettingsPage({ onBack }) {
       console.error(err);
     } finally {
       setBotLoading(false);
+    }
+  }
+
+  async function handleClearCache() {
+    setClearingCache(true);
+    setMsg("");
+    try {
+      const res = await fetch(`${API_URL}/api/bot/clear-cache`, { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setMsg("Cache do WhatsApp limpo com sucesso! O bot precisa ser reiniciado.");
+        setBotEnabled(false);
+        setBotConnected(false);
+      } else {
+        setMsg(`Erro: ${data.error}`);
+      }
+    } catch (err) {
+      setMsg(`Erro ao limpar cache: ${err.message}`);
+    } finally {
+      setClearingCache(false);
     }
   }
 
@@ -500,6 +522,9 @@ function CsvSettingsPage({ onBack }) {
                 {botLoading ? "Iniciando..." : "Ligar Bot"}
               </button>
             )}
+            <button className="clear-cache-btn" onClick={handleClearCache} disabled={clearingCache}>
+              {clearingCache ? "Limpando..." : "Limpar cache do WhatsApp"}
+            </button>
           </div>
         </div>
       </section>

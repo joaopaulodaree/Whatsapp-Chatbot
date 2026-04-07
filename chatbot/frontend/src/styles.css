@@ -677,8 +677,7 @@ select {
   padding: 18px 22px;
   box-shadow: var(--shadow-sm);
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 16px;
 }
 
@@ -686,6 +685,12 @@ select {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.bot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .status-item {
@@ -751,6 +756,35 @@ select {
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+.bot-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.clear-cache-btn {
+  background: var(--surface);
+  color: var(--primary);
+  border: 1px solid rgba(15, 95, 168, 0.25);
+  border-radius: 12px;
+  padding: 0 20px;
+  min-height: 46px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease, border-color 0.2s ease;
+}
+
+.clear-cache-btn:hover {
+  background: var(--primary-soft);
+  transform: translateY(-1px);
+}
+
+.clear-cache-btn:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
+  transform: none;
 }
 
 /* === QR Code === */

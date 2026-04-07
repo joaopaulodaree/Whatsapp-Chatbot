@@ -14,6 +14,7 @@ const { listDemands, updateDemandStatus, deleteDemand } = require('./db/reposito
 
 const { searchClientsByName, loadCsv, getDefaultCsvPath, aggregateByName, formatCurrencyBR } = require('./nameSearch');
 const { startBot, stopBot, getBotQr } = require('./bot');
+const { clearWwebjsCache } = require('./bot/cache');
 const cleanCsv = require('./cleanCsv');
 const { getMessages, saveMessages } = require('./messages');
 
@@ -311,6 +312,15 @@ app.post('/api/bot/stop', async (req, res) => {
         res.json({ ok: true, message: 'Bot desativado' });
     } catch (err) {
         res.status(500).json({ error: 'Erro ao desativar bot', details: err.message });
+    }
+});
+
+app.post('/api/bot/clear-cache', (req, res) => {
+    try {
+        const result = clearWwebjsCache();
+        res.json({ ok: true, message: 'Cache limpo com sucesso', ...result });
+    } catch (err) {
+        res.status(500).json({ error: 'Erro ao limpar cache', details: err.message });
     }
 });
 
