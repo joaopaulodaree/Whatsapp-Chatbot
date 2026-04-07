@@ -1,8 +1,8 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({path: path.resolve(__dirname, '../.env')});
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
-const path = require('path');
 const fs = require('fs');
 const Groq = require('groq-sdk');
 const {
@@ -21,7 +21,7 @@ const { getMessages, saveMessages } = require('./messages');
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL_PREFERENCE = (process.env.GROQ_MODEL || 'openai/gpt-oss-120b').trim();
 
-const groq = new Groq({ apiKey: GROQ_API_KEY });
+const groq = GROQ_API_KEY ? new Groq({ apiKey: GROQ_API_KEY }) : null;
 
 const app = express();
 const PORT = 3001;
@@ -29,7 +29,9 @@ const PORT = 3001;
 const { createTables } = require('./db/schema');
 createTables();
 
-const DATA_DIR = path.resolve(__dirname, '../../data');
+const DATA_DIR = process.env.APP_DATA_DIR
+  ? path.join(process.env.APP_DATA_DIR, 'data')
+  : path.resolve(__dirname, '../../data');
 const STORAGE = multer.diskStorage({
     destination: function (req, file, cb) {
         if (!fs.existsSync(DATA_DIR)) {

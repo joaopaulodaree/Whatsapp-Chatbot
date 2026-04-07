@@ -3,7 +3,7 @@ import { QRCodeSVG } from "qrcode.react";
 import logo from "./assets/logo.jpg";
 import "./styles.css";
 
-const API_URL = "http://localhost:3001";
+const API_URL = "http://127.0.0.1:3001";
 
 function formatDate(dateString) {
   if (!dateString) return "-";
