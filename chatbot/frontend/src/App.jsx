@@ -17,9 +17,8 @@ function formatDate(dateString) {
 function getDemandLabel(type) {
   const labels = {
     crediario: "Crediário",
-    orcamento: "Orçamento",
-    produto: "Produto",
     vendedora: "Vendedora",
+    outros: "Outros",
   };
 
   return labels[type] || type;
@@ -189,11 +188,17 @@ const BOT_MESSAGE_LABELS = {
   menu_label: "Rótulo do menu",
   crediario_nome_request: "Pedido do nome (crediário)",
   crediario_duvida_request: "Pedido da dúvida (crediário)",
+  crediario_error: "Erro ao consultar API",
   crediario_continue_question: "Perguntar se tem mais dúvida",
   crediario_new_duvida_request: "Pedido da nova dúvida",
+  crediario_cliente_nao_encontrado: "Cliente não encontrado (use {name} como placeholder)",
   vendedora_question: "Pergunta vendedora",
   vendedora_contacts: "Contatos das vendedoras",
   vendedora_wait: "Mensagem de espera (vendedora)",
+  pagamento_request: "Pedido de comprovante (pagamento)",
+  pagamento_confirm: "Confirmação de recebimento (pagamento)",
+  outros_request: "Pergunta de outros assuntos",
+  outros_confirm: "Confirmação de recebimento (outros)",
   invalid_option: "Opção inválida",
   yes_or_no: "Pedido sim/não",
   final_prompt: "Mensagem final",

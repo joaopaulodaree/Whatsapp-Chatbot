@@ -1,12 +1,23 @@
 const db = require('../connection');
 
+function getLocalTimestamp() {
+  const now = new Date();
+  const offset = -now.getTimezoneOffset();
+  const sign = offset >= 0 ? '+' : '-';
+  const hours = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0');
+  const minutes = String(Math.abs(offset) % 60).padStart(2, '0');
+  const iso = now.toISOString().replace('Z', sign + hours + ':' + minutes);
+  return iso;
+}
+
 function createDemand({ clientId, type, description = null, status = 'pending' }) {
+  const timestamp = getLocalTimestamp();
   const stmt = db.prepare(`
-    INSERT INTO demands (client_id, type, description, status)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO demands (client_id, type, description, status, created_at)
+    VALUES (?, ?, ?, ?, ?)
   `);
 
-  const result = stmt.run(clientId, type, description, status);
+  const result = stmt.run(clientId, type, description, status, timestamp);
 
   return db
     .prepare(`
@@ -17,11 +28,12 @@ function createDemand({ clientId, type, description = null, status = 'pending' }
 }
 
 function updateDemandStatus(demandId, status) {
+  const timestamp = getLocalTimestamp();
   db.prepare(`
     UPDATE demands
-    SET status = ?, updated_at = CURRENT_TIMESTAMP
+    SET status = ?, updated_at = ?
     WHERE id = ?
-  `).run(status, demandId);
+  `).run(status, timestamp, demandId);
 
   return db
     .prepare(`

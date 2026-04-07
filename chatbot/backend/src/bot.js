@@ -137,6 +137,22 @@ function handleBotEvents(client) {
           return;
         }
 
+        if (body === '3') {
+          session.step = 'pagamento';
+          session.data = {};
+          sessions.set(from, session);
+          await msg.reply(msgs.pagamento_request);
+          return;
+        }
+
+        if (body === '4') {
+          session.step = 'outros';
+          session.data = {};
+          sessions.set(from, session);
+          await msg.reply(msgs.outros_request);
+          return;
+        }
+
         await msg.reply(msgs.invalid_option);
         return;
       }
@@ -158,6 +174,15 @@ function handleBotEvents(client) {
           await msg.reply(answer);
         } catch (error) {
           console.error('Erro ao consultar API:', error);
+          if (error.message === 'Cliente não encontrado') {
+            session.step = 'crediario_nome';
+            sessions.set(from, session);
+            await msg.reply(
+              `Não encontrei nenhum registro para o nome "${session.data.name}". ` +
+              `Verifique se digitou corretamente. Se o nome estiver certo, você não possui nenhuma dúvida em aberto.`
+            );
+            return;
+          }
           await msg.reply(msgs.crediario_error);
         }
 
@@ -176,6 +201,15 @@ function handleBotEvents(client) {
           await msg.reply(answer);
         } catch (error) {
           console.error('Erro ao consultar API:', error);
+          if (error.message === 'Cliente não encontrado') {
+            session.step = 'crediario_nome';
+            sessions.set(from, session);
+            await msg.reply(
+              `Não encontrei nenhum registro para o nome "${session.data.name}". ` +
+              `Verifique se digitou corretamente. Se o nome estiver certo, você não possui nenhuma dúvida em aberto. Vou pedir seu nome novamente.`
+            );
+            return;
+          }
           await msg.reply(msgs.crediario_error);
         }
 
@@ -201,6 +235,38 @@ function handleBotEvents(client) {
         }
 
         await msg.reply(msgs.yes_or_no);
+        return;
+      }
+
+      if (session.step === 'pagamento') {
+        if (!msg.hasMedia) {
+          await msg.reply("Aguardando o comprovante (imagem). Caso queira voltar ao início, digite 'menu'.");
+          return;
+        }
+
+        await msg.reply(msgs.pagamento_confirm);
+        await registerDemandFromMessage(msg, {
+          type: 'crediario',
+          description: 'Cliente enviou comprovante - checar pix/pagamento',
+        });
+        session.step = 'final';
+        sessions.set(from, session);
+        return;
+      }
+
+      if (session.step === 'outros') {
+        session.data.description = rawBody;
+        session.data.name = pushName || 'Cliente';
+        sessions.set(from, session);
+
+        await registerDemandFromMessage(msg, {
+          type: 'outros',
+          description: session.data.description,
+        });
+
+        await msg.reply(msgs.outros_confirm);
+        session.step = 'final';
+        sessions.set(from, session);
         return;
       }
 
