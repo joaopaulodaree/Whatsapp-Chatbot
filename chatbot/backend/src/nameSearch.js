@@ -271,7 +271,7 @@ function loadCsv(filePath, separator = ';') {
 }
 
 function getDefaultCsvPath() {
-  return path.resolve(__dirname, '../../data', 'Souarte_cleaned.CSV');
+  return path.resolve(__dirname, '../../data', '*.CSV');
 }
 
 function formatCurrencyBR(value) {

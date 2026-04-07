@@ -156,8 +156,6 @@ function createWindow() {
     },
   });
 
-  mainWindow.webContents.openDevTools({ mode: 'detach' });
-
   mainWindow.on('ready-to-show', () => {
     mainWindow.show();
     mainWindow.maximize();

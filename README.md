@@ -99,4 +99,4 @@ O cliente pode digitar `menu` a qualquer momento para voltar ao inicio.
 | `#settings` | Configuracoes do bot, CSV e QR code           |
 | `#messages` | Editor de mensagens do chatbot                 |
 
-Acesse `http://localhost:5173` (Vite dev) ou o arquivo `index.html` direto.
+Acesse `http://127.0.0.1:5173` (Vite dev) ou o arquivo `index.html` direto.

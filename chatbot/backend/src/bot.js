@@ -1,10 +1,10 @@
+const path = require('path');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const { setBotConnected, setBotEnabled, getBotStatus } = require('./store');
 const { registerDemandFromMessage, getContactData } = require('./services/demand.service');
 const { getMessages } = require('./messages');
 
-const TEST_NUMBERS = ['118244862099469@lid', '226860222951446@lid', '553198188053@c.us'];
 const sessions = new Map();
 
 let clientInstance = null;
@@ -12,7 +12,7 @@ let botStartedAt = null;
 let currentQrString = null;
 
 async function getAiResponse(query, userRequest) {
-  const response = await fetch('http://localhost:3001/api/ai-response', {
+  const response = await fetch('http://127.0.0.1:3001/api/ai-response', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -84,7 +84,6 @@ function handleBotEvents(client) {
         return;
       }
 
-      if (!TEST_NUMBERS.includes(from)) return;
       if (msg.fromMe) return;
 
       if (
@@ -385,14 +384,20 @@ function handleBotEvents(client) {
 }
 
 function createClient() {
+  const baseDataDir = process.env.APP_DATA_DIR || path.resolve(__dirname, '../data');
+
+  const waAuthDir = path.join(baseDataDir, 'wwebjs_auth');
+
   const client = new Client({
-    authStrategy: new LocalAuth(),
+    authStrategy: new LocalAuth({
+      dataPath: waAuthDir,
+      clientId: 'souarte-bot',
+    }),
     puppeteer: {
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     },
   });
-
   handleBotEvents(client);
   return client;
 }

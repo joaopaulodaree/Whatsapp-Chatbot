@@ -7,7 +7,7 @@
   "scripts": {
     "postinstall": "electron-builder install-app-deps",
     "rebuild:backend-native": "electron-rebuild -f -w better-sqlite3 --module-dir backend",
-    "electron:dev": "concurrently \"cd backend && npm start\" \"cd frontend && npx vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:dev": "concurrently \"cd backend && npm start\" \"cd frontend && npx vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "electron:start": "electron .",
     "build:frontend": "cd frontend && npm run build",
     "electron:build": "npm run build:frontend && npm run rebuild:backend-native && electron-builder",
