@@ -35,6 +35,13 @@ function createTables() {
       imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       rows_count INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      from_id TEXT PRIMARY KEY,
+      step TEXT NOT NULL,
+      data TEXT NOT NULL DEFAULT '{}',
+      updated_at INTEGER NOT NULL
+    );
   `);
 }
 

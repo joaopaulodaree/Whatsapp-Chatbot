@@ -11,11 +11,11 @@ async function getContactData(msg) {
   };
 }
 
-async function registerDemandFromMessage(msg, { type, description, name = null, status = 'pending' }) {
-  const { whatsappId, phone, pushName } = await getContactData(msg);
+async function registerDemand({ contact, type, description, status = 'pending' }) {
+  const { whatsappId, phone, pushName } = contact;
 
   const clientRecord = upsertClient({
-    name: name || pushName,
+    name: pushName,
     phone,
     whatsappId,
   });
@@ -35,5 +35,5 @@ async function registerDemandFromMessage(msg, { type, description, name = null, 
 
 module.exports = {
   getContactData,
-  registerDemandFromMessage,
+  registerDemand,
 };

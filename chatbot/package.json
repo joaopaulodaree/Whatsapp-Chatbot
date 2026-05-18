@@ -5,14 +5,25 @@
   "main": "main.js",
   "author": "Souarte",
   "scripts": {
+    "dev": "concurrently --names \"backend,frontend\" --prefix-colors \"cyan,magenta\" \"pnpm --filter backend start\" \"pnpm --filter frontend dev\"",
     "postinstall": "electron-builder install-app-deps",
     "rebuild:backend-native": "electron-rebuild -f -w better-sqlite3 --module-dir backend",
-    "electron:dev": "concurrently \"cd backend && npm start\" \"cd frontend && npx vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "electron:dev": "concurrently \"pnpm --filter backend start\" \"pnpm --filter frontend dev\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "electron:start": "electron .",
-    "build:frontend": "cd frontend && npm run build",
-    "electron:build": "npm run build:frontend && npm run rebuild:backend-native && electron-builder",
-    "electron:build:dir": "npm run build:frontend && npm run rebuild:backend-native && electron-builder --win dir",
-    "electron:build:portable": "npm run build:frontend && npm run rebuild:backend-native && electron-builder --win portable"
+    "build:frontend": "pnpm --filter frontend build",
+    "electron:build": "pnpm run build:frontend && pnpm run rebuild:backend-native && electron-builder",
+    "electron:build:dir": "pnpm run build:frontend && pnpm run rebuild:backend-native && electron-builder --win dir",
+    "electron:build:portable": "pnpm run build:frontend && pnpm run rebuild:backend-native && electron-builder --win portable"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "puppeteer",
+      "electron",
+      "protobufjs",
+      "@google/genai"
+    ]
   },
   "build": {
     "appId": "com.souarte.chatbot",

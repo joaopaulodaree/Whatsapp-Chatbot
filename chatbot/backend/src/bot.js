@@ -1,35 +1,50 @@
+'use strict';
+
 const path = require('path');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const { setBotConnected, setBotEnabled, getBotStatus } = require('./store');
-const { registerDemandFromMessage, getContactData } = require('./services/demand.service');
+const { getContactData, registerDemand } = require('./services/demand.service');
 const { getMessages } = require('./messages');
-
-const sessions = new Map();
+const { ConversationStateMachine } = require('./conversation/state-machine');
+const { SessionStore } = require('./conversation/session-store');
+const db = require('./db/connection');
+const { csvManager, aiReplyService } = require('./shared');
 
 let clientInstance = null;
 let botStartedAt = null;
 let currentQrString = null;
 
-async function getAiResponse(query, userRequest) {
-  const response = await fetch('http://127.0.0.1:3001/api/ai-response', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      q: query,
-      request: userRequest,
-    }),
-  });
+const aiService = {
+  async getReply(name, question) {
+    if (!aiReplyService) throw new Error('GROQ_API_KEY não configurada');
+    const { clients } = csvManager.search(name, { limit: 1 });
+    if (clients.length === 0) throw new Error('Cliente não encontrado');
+    return aiReplyService.getReply({ client: clients[0], userRequest: question });
+  },
+};
 
-  const data = await response.json();
+const demandService = { registerDemand };
+const sessionStore = new SessionStore(db);
+const messageStore = { get: getMessages };
 
-  if (!response.ok) {
-    throw new Error(data?.error || 'Erro ao consultar a API');
-  }
+const stateMachine = new ConversationStateMachine({
+  aiService,
+  demandService,
+  sessionStore,
+  messageStore,
+});
 
-  return data.answer;
+// Evict stale sessions every hour
+setInterval(() => sessionStore.evictStale(), 60 * 60 * 1000).unref();
+
+function toMessage(msg, contact) {
+  return {
+    from: msg.from,
+    body: msg.body || '',
+    hasMedia: !!(msg.hasMedia || msg.type === 'image' || msg.type === 'document' || msg.type === 'sticker'),
+    contact,
+  };
 }
 
 function handleBotEvents(client) {
@@ -69,23 +84,10 @@ function handleBotEvents(client) {
     if (!status.botEnabled) return;
 
     try {
-      const from = msg.from;
-
-      const { whatsappId, phone, pushName } = await getContactData(msg);
-
-      console.log({
-        whatsappId,
-        phone,
-        pushName,
-        body: msg.body,
-      });
-
-      if (botStartedAt && msg.timestamp < botStartedAt) {
-        return;
-      }
-
+      if (botStartedAt && msg.timestamp < botStartedAt) return;
       if (msg.fromMe) return;
 
+      const from = msg.from;
       if (
         msg.isStatus ||
         msg.broadcast ||
@@ -93,262 +95,13 @@ function handleBotEvents(client) {
         from.endsWith('@broadcast') ||
         from.endsWith('@g.us') ||
         from.endsWith('@newsletter')
-      ) {
-        return;
-      }
+      ) return;
 
-      const rawBody = msg.body?.trim() || '';
-      const body = rawBody.toLowerCase();
-
-      const msgs = getMessages();
-
-      if (!sessions.has(from)) {
-        sessions.set(from, { step: 'menu', data: {} });
-        await msg.reply(msgs.greeting + '\n' + msgs.menu_options);
-        return;
-      }
-
-      const session = sessions.get(from);
-
-      if (body === 'menu' && !msg.hasMedia) {
-        session.step = 'menu';
-        session.data = {};
-        sessions.set(from, session);
-        await msg.reply(msgs.menu_label + '\n' + msgs.menu_options);
-        return;
-      }
-
-      if (session.step === 'menu') {
-        if (body === '1') {
-          session.step = 'crediario_nome';
-          session.data = {};
-          sessions.set(from, session);
-          await msg.reply(msgs.crediario_nome_request);
-          return;
-        }
-
-        if (body === '2') {
-          session.step = 'vendedora';
-          sessions.set(from, session);
-          await msg.reply(msgs.vendedora_question);
-          return;
-        }
-
-        if (body === '3') {
-          session.step = 'pagamento';
-          session.data = {};
-          sessions.set(from, session);
-          await msg.reply(msgs.pagamento_request);
-          return;
-        }
-
-        if (body === '4') {
-          session.step = 'outros';
-          session.data = {};
-          sessions.set(from, session);
-          await msg.reply(msgs.outros_request);
-          return;
-        }
-
-        await msg.reply(msgs.invalid_option);
-        return;
-      }
-
-      if (session.step === 'crediario_nome') {
-        session.data.name = rawBody;
-        session.step = 'crediario_duvida';
-        sessions.set(from, session);
-        await msg.reply(msgs.crediario_duvida_request);
-        return;
-      }
-
-      if (session.step === 'crediario_duvida') {
-        session.data.userRequest = rawBody;
-        sessions.set(from, session);
-
-        try {
-          const answer = await getAiResponse(session.data.name, session.data.userRequest);
-          await msg.reply(answer);
-        } catch (error) {
-          console.error('Erro ao consultar API:', error);
-          if (error.message === 'Cliente não encontrado') {
-            session.step = 'crediario_nome';
-            sessions.set(from, session);
-            await msg.reply(
-              `Não encontrei nenhum registro para o nome "${session.data.name}". ` +
-              `Verifique se digitou corretamente. Se o nome estiver certo, você não possui nenhuma dúvida em aberto.`
-            );
-            return;
-          }
-          await msg.reply(msgs.crediario_error);
-        }
-
-        session.step = 'crediario_continue';
-        sessions.set(from, session);
-        await msg.reply(msgs.crediario_continue_question);
-        return;
-      }
-
-      if (session.step === 'crediario_new_duvida') {
-        session.data.userRequest = rawBody;
-        sessions.set(from, session);
-
-        try {
-          const answer = await getAiResponse(session.data.name, session.data.userRequest);
-          await msg.reply(answer);
-        } catch (error) {
-          console.error('Erro ao consultar API:', error);
-          if (error.message === 'Cliente não encontrado') {
-            session.step = 'crediario_nome';
-            sessions.set(from, session);
-            await msg.reply(
-              `Não encontrei nenhum registro para o nome "${session.data.name}". ` +
-              `Verifique se digitou corretamente. Se o nome estiver certo, você não possui nenhuma dúvida em aberto. Vou pedir seu nome novamente.`
-            );
-            return;
-          }
-          await msg.reply(msgs.crediario_error);
-        }
-
-        session.step = 'crediario_continue';
-        sessions.set(from, session);
-        await msg.reply(msgs.crediario_continue_question);
-        return;
-      }
-
-      if (session.step === 'crediario_continue') {
-        if (body === 'sim') {
-          session.step = 'crediario_new_duvida';
-          sessions.set(from, session);
-          await msg.reply(msgs.crediario_new_duvida_request);
-          return;
-        }
-
-        if (body === 'não' || body === 'nao') {
-          await msg.reply(msgs.final_prompt);
-          session.step = 'final';
-          sessions.set(from, session);
-          return;
-        }
-
-        await msg.reply(msgs.yes_or_no);
-        return;
-      }
-
-      if (session.step === 'pagamento' || session.step === 'pagamento_nome' || session.step === 'pagamento_imagem') {
-        const isImage = msg.hasMedia || msg.type === 'image' || msg.type === 'document' || msg.type === 'sticker';
-
-        if (isImage) {
-          session.data.hasImage = true;
-          sessions.set(from, session);
-
-          // Se já tem nome recebido, completa e registra demanda
-          if (session.data.name) {
-            await msg.reply(msgs.pagamento_final);
-            await registerDemandFromMessage(msg, {
-              type: 'crediario',
-              description: `Cliente: ${session.data.name} - comprovante recebido`,
-            });
-            session.step = 'final';
-            sessions.set(from, session);
-            return;
-          }
-
-          // Só recebeu imagem, pede o nome
-          await msg.reply(msgs.pagamento_imagem_confirm);
-          session.step = 'pagamento_nome';
-          sessions.set(from, session);
-          return;
-        }
-
-        // Texto (nome)
-        if (rawBody) {
-          session.data.name = rawBody;
-          sessions.set(from, session);
-
-          // Se já tem imagem, completa e registra demanda
-          if (session.data.hasImage) {
-            await msg.reply(msgs.pagamento_final);
-            await registerDemandFromMessage(msg, {
-              type: 'crediario',
-              description: `Cliente: ${session.data.name} - comprovante recebido`,
-            });
-            session.step = 'final';
-            sessions.set(from, session);
-            return;
-          }
-
-          // Só recebeu nome, pede imagem
-          session.step = 'pagamento_imagem';
-          sessions.set(from, session);
-          await msg.reply(msgs.pagamento_nome_confirm.replace('{name}', rawBody));
-          return;
-        }
-
-        await msg.reply("Por favor, envie o comprovante (imagem) ou o nome do crediário (texto).");
-        return;
-      }
-
-      if (session.step === 'outros') {
-        session.data.description = rawBody;
-        session.data.name = pushName || 'Cliente';
-        sessions.set(from, session);
-
-        await registerDemandFromMessage(msg, {
-          type: 'outros',
-          description: session.data.description,
-        });
-
-        await msg.reply(msgs.outros_confirm);
-        session.step = 'final';
-        sessions.set(from, session);
-        return;
-      }
-
-      if (session.step === 'vendedora') {
-        if (body === 'sim') {
-          await msg.reply(msgs.vendedora_contacts);
-          session.step = 'final';
-          sessions.set(from, session);
-          return;
-        }
-
-        if (body === 'não' || body === 'nao') {
-          await msg.reply(msgs.vendedora_wait);
-          await registerDemandFromMessage(msg, {
-            type: 'vendedora',
-            description: 'Cliente deseja falar com uma vendedora',
-          });
-          session.step = 'final';
-          sessions.set(from, session);
-          return;
-        }
-
-        await msg.reply(msgs.yes_or_no);
-        return;
-      }
-
-      if (session.step === 'orcamento') {
-        await msg.reply(msgs.orcamento_confirm);
-        session.step = 'final';
-        sessions.set(from, session);
-        return;
-      }
-
-      if (session.step === 'produtos') {
-        await msg.reply(msgs.produtos_confirm);
-        session.step = 'final';
-        sessions.set(from, session);
-        return;
-      }
-
-      if (session.step === 'final') {
-        await msg.reply(msgs.final_prompt);
-        return;
-      }
+      const contact = await getContactData(msg);
+      const replies = await stateMachine.handle(toMessage(msg, contact));
+      for (const reply of replies) await msg.reply(reply);
     } catch (error) {
       console.error('Error handling message:', error);
-
       try {
         const msgs = getMessages();
         await msg.reply(msgs.generic_error);
@@ -357,35 +110,10 @@ function handleBotEvents(client) {
       }
     }
   });
-
-  // Fallback: quando a mídia é detectada após download completo
-  client.on('message_media', async (msg) => {
-    const status = getBotStatus();
-    if (!status.bot_enabled) return;
-
-    const from = msg.from;
-    if (!TEST_NUMBERS.includes(from)) return;
-    if (msg.fromMe) return;
-    if (from.endsWith('@g.us') || from.endsWith('@newsletter')) return;
-
-    const session = sessions.get(from);
-    if (!session) return;
-    if (session.step !== 'pagamento') return;
-
-    const msgs = getMessages();
-    await msg.reply(msgs.pagamento_confirm);
-    await registerDemandFromMessage(msg, {
-      type: 'pagamento',
-      description: 'Cliente enviou comprovante via message_media',
-    });
-    session.step = 'final';
-    sessions.set(from, session);
-  });
 }
 
 function createClient() {
   const baseDataDir = process.env.APP_DATA_DIR || path.resolve(__dirname, '../data');
-
   const waAuthDir = path.join(baseDataDir, 'wwebjs_auth');
 
   const client = new Client({

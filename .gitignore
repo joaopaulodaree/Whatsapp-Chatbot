@@ -76,3 +76,5 @@ frontend/build/
 # Database
 *.csv
 *.db*
+# Runtime data (uploads, WhatsApp auth, SQLite)
+chatbot/backend/data/
